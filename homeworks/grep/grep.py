@@ -1,17 +1,80 @@
 
 import argparse
 import sys
-
+import re
 
 def output(line):
     print(line)
 
+def prepare_output(line, line_number=None, delimiter=':'):
+    if not line_number is None:
+        output(str(line_number) + delimiter + line)
+    else:
+        output(line)
 
 def grep(lines, params):
+    counter = line_number = 0
+    context = {}
+    context_found = []
+
     for line in lines:
-        line = line.rstrip()
-        if params.pattern in line:
-            output(line)
+        line_number += 1
+        line = origin_line = line.rstrip()
+        pattern = params.pattern
+
+        if params.context or params.before_context or params.after_context:
+            context[line_number] = origin_line
+
+        if params.ignore_case:
+            pattern = pattern.lower()
+            line = line.lower()
+
+        if '?' in pattern:
+            pattern = pattern.replace('?','.')
+        if '*' in pattern:
+            pattern = pattern.replace('*','.*')
+        
+        result = re.search(pattern, line)
+
+        # print (line_number, pattern, result)
+
+        if (params.invert and not result) \
+        or (not params.invert and result):
+            if params.count:
+                counter += 1
+            elif params.context or params.before_context or params.after_context:
+                context_found.append(line_number)
+            else:
+                prepare_output(origin_line, line_number if params.line_number else None)
+
+
+    if params.count:
+        prepare_output(str(counter))
+    
+    result_lines = []
+    if params.context:
+        result_lines = [ln - (offset - params.context) for ln in context_found for offset in range(params.context * 2 + 1)]
+        
+        # result_lines = set()
+        # for line_number in context_found:
+        #     for add in range(params.context * 2 + 1):
+        #         result_lines.add(line_number - (add - params.context))
+    
+    if params.before_context:
+        result_lines = [ln + offset for ln in context_found for offset in range(-params.before_context,1)]
+
+    if params.after_context:
+        result_lines += [ln + offset for ln in context_found for offset in range(params.after_context+1)]
+
+    if result_lines:
+        result_lines = set(result_lines)
+        for line in result_lines:
+            if line not in context.keys():
+                continue
+            if params.line_number:
+                prepare_output(context[line], line, ':' if line in context_found else '-')
+            else:
+                output(context[line])
 
 
 def parse_args(args):
